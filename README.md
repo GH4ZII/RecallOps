@@ -18,3 +18,12 @@ RecallOps uses **CockroachDB as persistent agent memory** to store incidents, ac
 * Amazon Bedrock
 * AWS Lambda
 * Next.js
+
+### Run locally (Phase 1 mock demo)
+
+```bash
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). Use **Demo controls** to run Incident #1, then Incident #2.
