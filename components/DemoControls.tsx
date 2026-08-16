@@ -1,11 +1,49 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useDemo } from "@/lib/demo/store";
+
+type DbStatus = "checking" | "connected" | "missing" | "error";
 
 export function DemoControls() {
   const router = useRouter();
   const { state, startScenario, resetDemo, hydrated } = useDemo();
+  const [dbStatus, setDbStatus] = useState<DbStatus>("checking");
+  const [dbError, setDbError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/db")
+      .then(async (res) => {
+        const data = (await res.json()) as {
+          ok?: boolean;
+          configured?: boolean;
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!data.configured) {
+          setDbStatus("missing");
+          setDbError(null);
+          return;
+        }
+        if (data.ok) {
+          setDbStatus("connected");
+          setDbError(null);
+          return;
+        }
+        setDbStatus("error");
+        setDbError(data.error ?? "Connection failed");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setDbStatus("error");
+        setDbError(err instanceof Error ? err.message : "Connection failed");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!hydrated) {
     return (
@@ -26,6 +64,15 @@ export function DemoControls() {
     }
   };
 
+  const dbLabel =
+    dbStatus === "connected"
+      ? "CockroachDB connected"
+      : dbStatus === "missing"
+        ? "CockroachDB not configured (mock-only)"
+        : dbStatus === "error"
+          ? `CockroachDB error${dbError ? `: ${dbError}` : ""}`
+          : "Checking CockroachDB…";
+
   return (
     <section className="rounded-lg border border-accent/25 bg-surface-raised p-5 shadow-soft">
       <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-ink-muted">
@@ -34,6 +81,17 @@ export function DemoControls() {
       <p className="mt-2 text-sm text-ink-muted">
         Run Incident #1 first. After memory is stored, unlock Incident #2 to show
         recall-driven remediation.
+      </p>
+      <p
+        className={`mt-3 text-xs ${
+          dbStatus === "connected"
+            ? "text-accent-strong"
+            : dbStatus === "error"
+              ? "text-danger"
+              : "text-ink-faint"
+        }`}
+      >
+        {dbLabel}
       </p>
       <div className="mt-4 flex flex-wrap gap-3">
         <button

@@ -47,16 +47,16 @@ The full Incident #1 → Incident #2 story plays end-to-end in the UI with mock 
 
 ### Deliverables
 
-- [ ] CockroachDB connection (`lib/db/cockroach.ts`)
-- [ ] Schema (`database/schema.sql`)
+- [x] CockroachDB connection (`lib/db/cockroach.ts`)
+- [x] Schema (`database/schema.sql`)
   - `services`
   - `incidents`
   - `actions`
   - `memories`
-- [ ] Save / retrieve incidents
-- [ ] Save / retrieve actions (PENDING, RUNNING, FAILED, SUCCESS, SKIPPED)
-- [ ] Save / retrieve memories
-- [ ] Retrieve incident history for a service
+- [x] Save / retrieve incidents
+- [x] Save / retrieve actions (PENDING, RUNNING, FAILED, SUCCESS, SKIPPED)
+- [x] Save / retrieve memories
+- [x] Retrieve incident history for a service
 
 ### Done when
 

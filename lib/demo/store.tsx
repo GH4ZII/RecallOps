@@ -10,9 +10,11 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { persistDemoIncident } from "./persist";
 import { getScenario, type ScenarioStep } from "./scenarios";
 import { runScenarioSimulation, type SimulationHandle } from "./simulate";
 import type {
+  ActionResult,
   DashboardMetrics,
   DemoState,
   Incident,
@@ -296,6 +298,9 @@ export function DemoProvider({ children }: { children: ReactNode }) {
         runtime: emptyRuntime(id),
       });
 
+      const actionsAcc: ActionResult[] = [];
+      let resolvedAt: string | null = null;
+
       const handle = runScenarioSimulation(scenarioId, (step) => {
         dispatch({
           type: "APPLY_STEP",
@@ -303,6 +308,55 @@ export function DemoProvider({ children }: { children: ReactNode }) {
           step,
           startedAt: startedAtRef.current[id] ?? startedAt,
         });
+
+        if (step.skipActions?.length) {
+          for (const skip of step.skipActions) {
+            const idx = actionsAcc.findIndex((a) => a.id === skip.id);
+            if (idx >= 0) actionsAcc[idx] = skip;
+            else actionsAcc.push(skip);
+          }
+        }
+        if (step.action) {
+          const idx = actionsAcc.findIndex((a) => a.id === step.action!.id);
+          if (idx >= 0) actionsAcc[idx] = step.action;
+          else actionsAcc.push(step.action);
+        }
+        if (step.resolve || step.state === "RESOLVED") {
+          resolvedAt = new Date().toISOString();
+        }
+
+        if (step.memory) {
+          void persistDemoIncident({
+            serviceName: incident.service,
+            incident: {
+              externalId: id,
+              title: incident.title,
+              description: incident.description,
+              severity: incident.severity,
+              status: "resolved",
+              startedAt,
+              resolvedAt: resolvedAt ?? new Date().toISOString(),
+            },
+            actions: actionsAcc.map((a) => ({
+              externalId: a.id,
+              actionType: a.actionType,
+              description: a.description,
+              status: a.status,
+            })),
+            memory: {
+              summary: step.memory.summary,
+              rootCause: step.memory.rootCause,
+              successfulAction: step.memory.successfulAction,
+              failedActions: step.memory.failedActions,
+            },
+          }).then((result) => {
+            if (!result.ok && !result.skipped) {
+              console.warn("[RecallOps] CockroachDB persist failed:", result.error);
+            } else if (result.ok) {
+              console.info("[RecallOps] Incident persisted to CockroachDB:", id);
+            }
+          });
+        }
       });
 
       simRef.current = handle;
