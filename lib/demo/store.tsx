@@ -12,6 +12,7 @@ import {
 } from "react";
 import { persistDemoIncident } from "./persist";
 import { getScenario, type ScenarioStep } from "./scenarios";
+import { searchDemoMemories } from "./searchMemories";
 import { runScenarioSimulation, type SimulationHandle } from "./simulate";
 import type {
   ActionResult,
@@ -20,8 +21,17 @@ import type {
   Incident,
   IncidentRuntime,
   Memory,
+  RetrievedMemory,
   ScenarioId,
 } from "./types";
+
+function memoryFoundLabel(memories: RetrievedMemory[]): string {
+  if (memories.length === 0) {
+    return "No useful previous memory found";
+  }
+  const best = Math.round(Math.max(...memories.map((m) => m.similarity)) * 100);
+  return `${memories.length} memor${memories.length === 1 ? "y" : "ies"} found — best match ${best}%`;
+}
 
 const STORAGE_KEY = "recallops-demo-v1";
 
@@ -300,32 +310,77 @@ export function DemoProvider({ children }: { children: ReactNode }) {
 
       const actionsAcc: ActionResult[] = [];
       let resolvedAt: string | null = null;
+      /** When set, the next MEMORY_FOUND step uses live vector results instead of mocks. */
+      let liveRetrieved: RetrievedMemory[] | null = null;
 
-      const handle = runScenarioSimulation(scenarioId, (step) => {
+      const handle = runScenarioSimulation(scenarioId, async (step) => {
+        let stepToApply = step;
+
+        if (step.state === "SEARCHING_MEMORY") {
+          dispatch({
+            type: "APPLY_STEP",
+            incidentId: id,
+            step,
+            startedAt: startedAtRef.current[id] ?? startedAt,
+          });
+
+          const search = await searchDemoMemories({
+            query: incident.description,
+            limit: 3,
+          });
+          if (search.ok && search.memories) {
+            liveRetrieved = search.memories;
+            console.info(
+              "[RecallOps] Vector memory search returned",
+              search.memories.length,
+              "hit(s)",
+            );
+          } else {
+            liveRetrieved = null;
+            if (!search.skipped) {
+              console.warn(
+                "[RecallOps] Vector memory search failed; using scenario mocks:",
+                search.error,
+              );
+            }
+          }
+          return;
+        }
+
+        if (step.state === "MEMORY_FOUND" && liveRetrieved !== null) {
+          stepToApply = {
+            ...step,
+            label: memoryFoundLabel(liveRetrieved),
+            retrievedMemories: liveRetrieved,
+            tone: liveRetrieved.length > 0 ? "accent" : "neutral",
+          };
+          liveRetrieved = null;
+        }
+
         dispatch({
           type: "APPLY_STEP",
           incidentId: id,
-          step,
+          step: stepToApply,
           startedAt: startedAtRef.current[id] ?? startedAt,
         });
 
-        if (step.skipActions?.length) {
-          for (const skip of step.skipActions) {
+        if (stepToApply.skipActions?.length) {
+          for (const skip of stepToApply.skipActions) {
             const idx = actionsAcc.findIndex((a) => a.id === skip.id);
             if (idx >= 0) actionsAcc[idx] = skip;
             else actionsAcc.push(skip);
           }
         }
-        if (step.action) {
-          const idx = actionsAcc.findIndex((a) => a.id === step.action!.id);
-          if (idx >= 0) actionsAcc[idx] = step.action;
-          else actionsAcc.push(step.action);
+        if (stepToApply.action) {
+          const idx = actionsAcc.findIndex((a) => a.id === stepToApply.action!.id);
+          if (idx >= 0) actionsAcc[idx] = stepToApply.action;
+          else actionsAcc.push(stepToApply.action);
         }
-        if (step.resolve || step.state === "RESOLVED") {
+        if (stepToApply.resolve || stepToApply.state === "RESOLVED") {
           resolvedAt = new Date().toISOString();
         }
 
-        if (step.memory) {
+        if (stepToApply.memory) {
           void persistDemoIncident({
             serviceName: incident.service,
             incident: {
@@ -344,10 +399,10 @@ export function DemoProvider({ children }: { children: ReactNode }) {
               status: a.status,
             })),
             memory: {
-              summary: step.memory.summary,
-              rootCause: step.memory.rootCause,
-              successfulAction: step.memory.successfulAction,
-              failedActions: step.memory.failedActions,
+              summary: stepToApply.memory.summary,
+              rootCause: stepToApply.memory.rootCause,
+              successfulAction: stepToApply.memory.successfulAction,
+              failedActions: stepToApply.memory.failedActions,
             },
           }).then((result) => {
             if (!result.ok && !result.skipped) {

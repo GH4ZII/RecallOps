@@ -70,11 +70,11 @@ Incident #1 writes real rows to CockroachDB, and history can be read back.
 
 ### Deliverables
 
-- [ ] Embedding generation (`lib/ai/embeddings.ts`)
-- [ ] Vector column on incidents / memories
-- [ ] Vector similarity search in CockroachDB
-- [ ] Similarity scores surfaced in UI (e.g. 96%, 89%, 74%)
-- [ ] Wire search into agent flow: `createEmbedding → searchSimilarMemories`
+- [x] Embedding generation (`lib/ai/embeddings.ts`)
+- [x] Vector column on incidents / memories
+- [x] Vector similarity search in CockroachDB
+- [x] Similarity scores surfaced in UI (e.g. 96%, 89%, 74%)
+- [x] Wire search into agent flow: `createEmbedding → searchSimilarMemories`
 
 ### Done when
 

@@ -1,4 +1,5 @@
 import type { PoolClient } from "pg";
+import { toVectorLiteral } from "@/lib/ai/embeddings";
 import { asQueryable, query } from "./cockroach";
 import type { DbIncident, DbIncidentStatus, IncidentWithService } from "./types";
 
@@ -11,7 +12,15 @@ export interface SaveIncidentInput {
   startedAt?: string | Date;
   resolvedAt?: string | Date | null;
   externalId?: string | null;
+  /** Float embedding; stored as VECTOR(1024). */
+  embedding?: number[] | null;
 }
+
+const INCIDENT_RETURNING = `
+  id, service_id, title, description, severity, status,
+  started_at, resolved_at, external_id, embedding::STRING AS embedding,
+  created_at, updated_at
+`;
 
 export async function saveIncident(
   input: SaveIncidentInput,
@@ -21,13 +30,17 @@ export async function saveIncident(
   const startedAt = input.startedAt ?? new Date();
   const resolvedAt = input.resolvedAt ?? null;
   const externalId = input.externalId ?? null;
+  const embeddingLiteral =
+    input.embedding && input.embedding.length > 0
+      ? toVectorLiteral(input.embedding)
+      : null;
 
   const sql = `
     INSERT INTO incidents (
       service_id, title, description, severity, status,
-      started_at, resolved_at, external_id, updated_at
+      started_at, resolved_at, external_id, embedding, updated_at
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::VECTOR, now())
     ON CONFLICT (external_id) DO UPDATE SET
       service_id = EXCLUDED.service_id,
       title = EXCLUDED.title,
@@ -36,10 +49,9 @@ export async function saveIncident(
       status = EXCLUDED.status,
       started_at = EXCLUDED.started_at,
       resolved_at = EXCLUDED.resolved_at,
+      embedding = COALESCE(EXCLUDED.embedding, incidents.embedding),
       updated_at = now()
-    RETURNING
-      id, service_id, title, description, severity, status,
-      started_at, resolved_at, external_id, created_at, updated_at
+    RETURNING ${INCIDENT_RETURNING}
   `;
 
   const result = await asQueryable(client).query<DbIncident>(sql, [
@@ -51,6 +63,7 @@ export async function saveIncident(
     startedAt,
     resolvedAt,
     externalId,
+    embeddingLiteral,
   ]);
   return result.rows[0];
 }
@@ -67,9 +80,7 @@ export async function updateIncidentStatus(
         resolved_at = COALESCE($3, resolved_at),
         updated_at = now()
     WHERE id = $1
-    RETURNING
-      id, service_id, title, description, severity, status,
-      started_at, resolved_at, external_id, created_at, updated_at
+    RETURNING ${INCIDENT_RETURNING}
   `;
   const result = await asQueryable(client).query<DbIncident>(sql, [
     id,
@@ -84,7 +95,8 @@ export async function getIncidentById(id: string): Promise<IncidentWithService |
     `
     SELECT
       i.id, i.service_id, i.title, i.description, i.severity, i.status,
-      i.started_at, i.resolved_at, i.external_id, i.created_at, i.updated_at,
+      i.started_at, i.resolved_at, i.external_id,
+      i.embedding::STRING AS embedding, i.created_at, i.updated_at,
       s.name AS service_name,
       s.environment AS service_environment
     FROM incidents i
@@ -101,7 +113,8 @@ export async function listIncidents(limit = 50): Promise<IncidentWithService[]> 
     `
     SELECT
       i.id, i.service_id, i.title, i.description, i.severity, i.status,
-      i.started_at, i.resolved_at, i.external_id, i.created_at, i.updated_at,
+      i.started_at, i.resolved_at, i.external_id,
+      i.embedding::STRING AS embedding, i.created_at, i.updated_at,
       s.name AS service_name,
       s.environment AS service_environment
     FROM incidents i
@@ -121,7 +134,8 @@ export async function getIncidentsByServiceId(
     `
     SELECT
       i.id, i.service_id, i.title, i.description, i.severity, i.status,
-      i.started_at, i.resolved_at, i.external_id, i.created_at, i.updated_at,
+      i.started_at, i.resolved_at, i.external_id,
+      i.embedding::STRING AS embedding, i.created_at, i.updated_at,
       s.name AS service_name,
       s.environment AS service_environment
     FROM incidents i

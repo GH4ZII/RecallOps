@@ -24,6 +24,8 @@ export interface DbIncident {
   started_at: Date;
   resolved_at: Date | null;
   external_id: string | null;
+  /** Titan Embed Text V2 vector literal or null when not yet embedded */
+  embedding: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -47,7 +49,15 @@ export interface DbMemory {
   root_cause: string;
   successful_action: string;
   failed_actions: string[];
+  /** Titan Embed Text V2 vector literal or null when not yet embedded */
+  embedding: string | null;
   created_at: Date;
+}
+
+export interface SimilarMemory extends DbMemory {
+  service_name: string;
+  /** Cosine similarity in [0, 1] derived from `1 - (embedding <=> query)` */
+  similarity: number;
 }
 
 export interface IncidentWithService extends DbIncident {
